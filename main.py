@@ -1,3 +1,4 @@
+
 import os
 import random
 import re
@@ -134,9 +135,11 @@ class PDFEditorBot:
         }
 
         writer.update_page_form_field_values(writer.pages[0], fields)
+
         output_name = f"report-{data['report_number']}.pdf"
         out_path = os.path.join("/mnt/data", output_name)
 
+        os.makedirs("/mnt/data", exist_ok=True)
         with open(out_path, "wb") as f:
             writer.write(f)
 
