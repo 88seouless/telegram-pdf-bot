@@ -1,11 +1,13 @@
+
 import os
+import random
+from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from io import BytesIO
-import random
 import tempfile
 import logging
 
@@ -26,10 +28,10 @@ class PdfEditorBot:
         self.app.add_handler(CallbackQueryHandler(self.handle_callback))
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await update.message.reply_text("Welcome! Send me a PDF and I’ll guide you through editing it.")
+        await update.message.reply_text("Send me your cleared PDF and I’ll walk you through filling it.")
 
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await update.message.reply_text("Upload a PDF, and I’ll ask for some text to fill it in!")
+        await update.message.reply_text("Upload a blank PDF form. I’ll prompt you for details and generate a filled version.")
 
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         USER_STATES.pop(update.effective_user.id, None)
@@ -39,65 +41,101 @@ class PdfEditorBot:
         await update.callback_query.answer()
 
     def random_badge(self):
-        number = f"{random.randint(10000, 99999)}"
-        name = random.choice(["Sam Carter", "Riley Fox", "Chris Nolan", "Drew Martin"])
-        return f"{number}/{name}"
+        return f"{random.randint(10000, 99999)}/{random.choice(['Leo Tanner', 'Riley Fox', 'Sam Carter'])}"
+
+    def random_title_number(self):
+        return f"C2025-0{random.randint(1000000, 9999999)}"
+
+    def next_weekday(self, delivery_datetime):
+        next_day = delivery_datetime + timedelta(days=1)
+        while next_day.weekday() >= 5:  # Skip Sat/Sun
+            next_day += timedelta(days=1)
+        return next_day.replace(hour=10, minute=0, second=0, microsecond=0)
 
     async def handle_pdf(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         doc = update.message.document
         file = await context.bot.get_file(doc.file_id)
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         await file.download_to_drive(temp_file.name)
-        await update.message.reply_text("Enter the First Name:")
-        USER_STATES[update.effective_user.id] = {"step": "awaiting_first_name", "pdf_path": temp_file.name}
+        await update.message.reply_text("Enter First Name:")
+        USER_STATES[update.effective_user.id] = {
+            "step": "awaiting_first",
+            "pdf_path": temp_file.name
+        }
 
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        user_id = update.effective_user.id
-        user_state = USER_STATES.get(user_id, {})
-        if not user_state:
-            await update.message.reply_text("Upload a PDF first.")
-            return
-        step = user_state.get("step")
+        uid = update.effective_user.id
         text = update.message.text.strip()
-        if step == "awaiting_first_name":
-            user_state["first_name"] = text
-            user_state["step"] = "awaiting_last_name"
-            await update.message.reply_text("Enter the Last Name:")
-        elif step == "awaiting_last_name":
-            user_state["last_name"] = text
-            user_state["step"] = "awaiting_email"
-            await update.message.reply_text("Enter the Email:")
-        elif step == "awaiting_email":
-            user_state["email"] = text
-            user_state["step"] = "awaiting_tracking"
-            await update.message.reply_text("Enter the Tracking Number:")
-        elif step == "awaiting_tracking":
-            user_state["tracking"] = text
-            user_state["badge"] = self.random_badge()
-            await self.apply_text_overlay(update, context, user_state)
+        user = USER_STATES.get(uid, {})
+        step = user.get("step")
 
-    async def apply_text_overlay(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: dict) -> None:
-        output_path = data["pdf_path"].replace(".pdf", "_filled.pdf")
+        if step == "awaiting_first":
+            user["first"] = text
+            user["step"] = "awaiting_last"
+            await update.message.reply_text("Enter Last Name:")
+        elif step == "awaiting_last":
+            user["last"] = text
+            user["step"] = "awaiting_email"
+            await update.message.reply_text("Enter Email:")
+        elif step == "awaiting_email":
+            user["email"] = text
+            user["step"] = "awaiting_tracking"
+            await update.message.reply_text("Enter Tracking Number:")
+        elif step == "awaiting_tracking":
+            user["tracking"] = text
+            user["step"] = "awaiting_order_total"
+            await update.message.reply_text("What was the order total?")
+        elif step == "awaiting_order_total":
+            user["order_total"] = text
+            user["step"] = "awaiting_delivery_datetime"
+            await update.message.reply_text("Enter delivery date & time (e.g. 2025-05-21 2:15 PM):")
+        elif step == "awaiting_delivery_datetime":
+            try:
+                delivery_dt = datetime.strptime(text, "%Y-%m-%d %I:%M %p")
+                user["delivery_dt"] = delivery_dt
+                user["report_dt"] = self.next_weekday(delivery_dt)
+                user["badge"] = self.random_badge()
+                user["title"] = self.random_title_number()
+                await self.apply_overlay(update, context, user)
+            except Exception as e:
+                await update.message.reply_text("Invalid format. Please use: YYYY-MM-DD H:MM AM/PM")
+
+    async def apply_overlay(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data):
+        path = data["pdf_path"]
+        output_path = path.replace(".pdf", "_done.pdf")
         packet = BytesIO()
         can = canvas.Canvas(packet, pagesize=letter)
-        can.drawString(145, 543, data["first_name"])
-        can.drawString(92, 543, data["last_name"])
+        can.setFont("Helvetica-Bold", 10)
+
+        # Overlay coordinates (estimates based on field positioning)
+        can.drawString(145, 543, data["first"])
+        can.drawString(92, 543, data["last"])
         can.drawString(135, 439, data["email"])
         can.drawString(142, 505, data["tracking"])
         can.drawString(440, 505, data["badge"])
+        can.drawString(405, 685, data["order_total"])
+        can.drawString(290, 610, data["delivery_dt"].strftime("%Y-%m-%d %I:%M %p"))
+        can.drawString(415, 610, data["report_dt"].strftime("%Y-%m-%d %I:%M %p"))
+        can.drawString(460, 50, data["report_dt"].strftime("%Y-%m-%d %I:%M %p"))
+        can.setFont("Helvetica-Bold", 12)
+        can.drawString(188, 730, data["title"])
         can.save()
         packet.seek(0)
+
         new_pdf = PdfReader(packet)
-        existing_pdf = PdfReader(data["pdf_path"])
-        output = PdfWriter()
-        for i in range(len(existing_pdf.pages)):
-            page = existing_pdf.pages[i]
+        original = PdfReader(path)
+        writer = PdfWriter()
+
+        for i in range(len(original.pages)):
+            page = original.pages[i]
             if i == 0:
                 page.merge_page(new_pdf.pages[0])
-            output.add_page(page)
-        with open(output_path, "wb") as f_out:
-            output.write(f_out)
-        await update.message.reply_document(document=open(output_path, "rb"), filename="filled_form.pdf")
+            writer.add_page(page)
+
+        with open(output_path, "wb") as f:
+            writer.write(f)
+
+        await update.message.reply_document(document=open(output_path, "rb"), filename="edited.pdf")
 
     def run(self):
         self.app.run_polling()
