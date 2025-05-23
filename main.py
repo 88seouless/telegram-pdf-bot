@@ -6,11 +6,10 @@ from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from PyPDF2 import PdfReader, PdfWriter
-from PyPDF2.generic import NameObject, TextStringObject
 import tempfile
 import logging
 
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 USER_STATE = {}
@@ -26,23 +25,21 @@ class PDFEditorBot:
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
         self.app.add_handler(CallbackQueryHandler(self.handle_callback))
 
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("welcome !")
 
-    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await update.message.reply_text("Upload a PDF and I'll guide you through filling it.")
+    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("upload a PDF and I’ll guide you through editing it.")
 
-    async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATE.pop(update.effective_user.id, None)
         await update.message.reply_text("cancelled.")
 
-    async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.answer()
 
     def generate_report_number(self):
-        year = datetime.now().year
-        suffix = f"0{random.randint(1000000, 9999999)}"
-        return f"C{year}-{suffix}"
+        return f"C{datetime.now().year}-0{random.randint(1000000, 9999999)}"
 
     def next_weekday(self, dt):
         dt += timedelta(days=1)
@@ -53,24 +50,28 @@ class PDFEditorBot:
     def clean_datetime_string(self, text):
         cleaned = text.strip()
         cleaned = re.sub(r"[\u200b\u200c\u202f\ufeff\xa0]", "", cleaned)
-        cleaned = re.sub(r"[“”]", '"', cleaned)  # smart quotes
-        cleaned = re.sub(r"[‘’]", "'", cleaned)  # smart apostrophes
-        cleaned = re.sub(r"\s+", " ", cleaned)  # normalize all whitespace
-        cleaned = cleaned.upper()
-        return cleaned
+        cleaned = re.sub(r"[“”]", '"', cleaned)
+        cleaned = re.sub(r"[‘’]", "'", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned.upper()
 
-    async def handle_pdf(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        doc = update.message.document
-        file = await context.bot.get_file(doc.file_id)
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        await file.download_to_drive(temp_file.name)
+    def try_parse_datetime(self, text):
+        formats = ["%Y-%m-%d %I:%M %p", "%Y-%m-%d %H:%M %p", "%Y-%m-%d %H:%M"]
+        for fmt in formats:
+            try:
+                return datetime.strptime(text, fmt)
+            except:
+                continue
+        return None
+
+    async def handle_pdf(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        file = await context.bot.get_file(update.message.document.file_id)
+        tf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        await file.download_to_drive(tf.name)
+        USER_STATE[update.effective_user.id] = {"step": "awaiting_first", "pdf_path": tf.name}
         await update.message.reply_text("first name:")
-        USER_STATE[update.effective_user.id] = {
-            "step": "awaiting_first",
-            "pdf_path": temp_file.name
-        }
 
-    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         uid = update.effective_user.id
         msg = update.message.text.strip()
         state = USER_STATE.get(uid, {})
@@ -101,18 +102,18 @@ class PDFEditorBot:
             state["step"] = "awaiting_delivery"
             await update.message.reply_text("delivery date and time:")
         elif step == "awaiting_delivery":
-            try:
-                clean_text = self.clean_datetime_string(msg)
-                delivery = datetime.strptime(clean_text, "%Y-%m-%d %I:%M %p")
+            cleaned = self.clean_datetime_string(msg)
+            delivery = self.try_parse_datetime(cleaned)
+            if delivery:
                 report_dt = self.next_weekday(delivery)
                 report_number = self.generate_report_number()
-
-                state["delivery_dt"] = delivery
-                state["report_dt"] = report_dt
-                state["report_number"] = report_number
-
+                state.update({
+                    "delivery_dt": delivery,
+                    "report_dt": report_dt,
+                    "report_number": report_number
+                })
                 await self.fill_pdf(update, context, state)
-            except Exception:
+            else:
                 await update.message.reply_text("invalid format. use: 2025-05-23 02:15 PM")
 
     async def fill_pdf(self, update, context, data):
@@ -135,7 +136,6 @@ class PDFEditorBot:
         }
 
         writer.update_page_form_field_values(writer.pages[0], fields)
-
         output_name = f"report-{data['report_number']}.pdf"
         out_path = os.path.join("/mnt/data", output_name)
 
@@ -149,5 +149,4 @@ class PDFEditorBot:
 
 if __name__ == "__main__":
     token = os.getenv("TELEGRAM_BOT_TOKEN")
-    bot = PDFEditorBot(token)
-    bot.run()
+    PDFEditorBot(token).run()
