@@ -1,6 +1,7 @@
 
 import os
 import random
+import re
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -50,6 +51,13 @@ class PDFEditorBot:
             dt += timedelta(days=1)
         return dt.replace(hour=10, minute=0)
 
+    def clean_datetime_string(self, text):
+        cleaned = text.strip()
+        cleaned = re.sub(r"[\u200b\u200c\xa0]", "", cleaned)  # Remove zero-width, non-breaking
+        cleaned = re.sub(r"\s+", " ", cleaned)  # Normalize spacing
+        cleaned = cleaned.upper()
+        return cleaned
+
     async def handle_pdf(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         doc = update.message.document
         file = await context.bot.get_file(doc.file_id)
@@ -93,7 +101,8 @@ class PDFEditorBot:
             await update.message.reply_text("delivery date and time:")
         elif step == "awaiting_delivery":
             try:
-                delivery = datetime.strptime(msg, "%Y-%m-%d %I:%M %p")
+                clean_text = self.clean_datetime_string(msg)
+                delivery = datetime.strptime(clean_text, "%Y-%m-%d %I:%M %p")
                 report_dt = self.next_weekday(delivery)
                 report_number = self.generate_report_number()
 
@@ -102,7 +111,7 @@ class PDFEditorBot:
                 state["report_number"] = report_number
 
                 await self.fill_pdf(update, context, state)
-            except Exception as e:
+            except Exception:
                 await update.message.reply_text("invalid format. use: 2025-05-23 02:15 PM")
 
     async def fill_pdf(self, update, context, data):
@@ -125,10 +134,6 @@ class PDFEditorBot:
         }
 
         writer.update_page_form_field_values(writer.pages[0], fields)
-        for j in range(len(writer.pages)):
-            writer.pages[j][NameObject("/Annots")][0].update({
-                NameObject("/Ff"): TextStringObject("1")
-            })
 
         output_name = f"report-{data['report_number']}.pdf"
         out_path = os.path.join("/mnt/data", output_name)
