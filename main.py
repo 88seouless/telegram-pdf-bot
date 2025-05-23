@@ -1,4 +1,3 @@
-
 import os
 import random
 import re
@@ -7,10 +6,6 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from PyPDF2 import PdfReader, PdfWriter
 import tempfile
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 USER_STATE = {}
 
@@ -56,7 +51,10 @@ class PDFEditorBot:
         return cleaned.upper()
 
     def try_parse_datetime(self, text):
-        formats = ["%Y-%m-%d %I:%M %p", "%Y-%m-%d %H:%M %p", "%Y-%m-%d %H:%M"]
+        formats = [
+            "%Y-%m-%d %I:%M %p", "%Y-%m-%d %H:%M %p", "%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M%p", "%Y-%m-%d %H:%M%p",
+            "%Y-%m-%d %I:%M", "%Y-%m-%d %I:%M%p", "%Y-%m-%d %H:%M%p"
+        ]
         for fmt in formats:
             try:
                 return datetime.strptime(text, fmt)
