@@ -7,7 +7,6 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from PyPDF2 import PdfReader, PdfWriter
 from PyPDF2.generic import NameObject, TextStringObject
-from io import BytesIO
 import tempfile
 import logging
 
@@ -53,8 +52,10 @@ class PDFEditorBot:
 
     def clean_datetime_string(self, text):
         cleaned = text.strip()
-        cleaned = re.sub(r"[\u200b\u200c\xa0]", "", cleaned)  # Remove zero-width, non-breaking
-        cleaned = re.sub(r"\s+", " ", cleaned)  # Normalize spacing
+        cleaned = re.sub(r"[\u200b\u200c\u202f\ufeff\xa0]", "", cleaned)
+        cleaned = re.sub(r"[“”]", '"', cleaned)  # smart quotes
+        cleaned = re.sub(r"[‘’]", "'", cleaned)  # smart apostrophes
+        cleaned = re.sub(r"\s+", " ", cleaned)  # normalize all whitespace
         cleaned = cleaned.upper()
         return cleaned
 
