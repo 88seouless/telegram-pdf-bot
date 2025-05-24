@@ -142,7 +142,7 @@ class PDFEditorBot:
         with open(filled_path, "wb") as f:
             writer.write(f)
 
-        # Now draw only the footer + title
+        # Now draw only the footer + centered report number
         final_path = f"/mnt/data/report-{data['report_number']}.pdf"
         c = canvas.Canvas(final_path, pagesize=letter)
         width, height = letter
@@ -153,7 +153,8 @@ class PDFEditorBot:
         c.setFont("Helvetica-Bold", 10)
         title_text = data['report_number']
         title_width = c.stringWidth(title_text, "Helvetica-Bold", 10)
-        c.drawString((width - title_width) / 2, height - 129, title_text)
+        c.drawString((width - title_width) / 2, height - 128.5, title_text)  # Fine-tuned Y
+
         c.save()
 
         await update.message.reply_document(document=open(final_path, "rb"), filename=f"report-{data['report_number']}.pdf")
