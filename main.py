@@ -2,8 +2,8 @@
 import os
 import random
 import re
-from datetime import datetime, timedelta
 import tempfile
+from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from PyPDF2 import PdfReader, PdfWriter
@@ -138,30 +138,25 @@ class PDFEditorBot:
         writer.update_page_form_field_values(writer.pages[0], fields)
 
         os.makedirs("/mnt/data", exist_ok=True)
-        filled_pdf_path = f"/mnt/data/filled-{data['report_number']}.pdf"
-        with open(filled_pdf_path, "wb") as f:
+        filled_path = f"/mnt/data/tempfilled-{data['report_number']}.pdf"
+        with open(filled_path, "wb") as f:
             writer.write(f)
 
-        # Overlay Report Created footer and Report Number title
+        # Now draw only the footer + title
         final_path = f"/mnt/data/report-{data['report_number']}.pdf"
         c = canvas.Canvas(final_path, pagesize=letter)
         width, height = letter
 
         c.setFont("Helvetica", 8)
         c.drawString(40, 21.5, f"Report Created On {data['report_dt'].strftime('%Y-%m-%d %I:%M %p')}")
-        right_text = "Page 1 of 1"
-        right_width = c.stringWidth(right_text, "Helvetica", 8)
-        c.drawString(width - right_width - 40, 21.5, right_text)
 
         c.setFont("Helvetica-Bold", 10)
         title_text = data['report_number']
         title_width = c.stringWidth(title_text, "Helvetica-Bold", 10)
         c.drawString((width - title_width) / 2, height - 129, title_text)
-
         c.save()
 
-        with open(final_path, "rb") as final_file:
-            await update.message.reply_document(document=final_file, filename=f"report-{data['report_number']}.pdf")
+        await update.message.reply_document(document=open(final_path, "rb"), filename=f"report-{data['report_number']}.pdf")
 
     def run(self):
         self.app.run_polling()
