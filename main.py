@@ -8,7 +8,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
-from PyPDF2.pdf import PageObject
 
 USER_STATE = {}
 
