@@ -117,10 +117,10 @@ class PDFEditorBot:
                 await update.message.reply_text("invalid format. use: 2025-05-23 02:15 PM")
 
     async def fill_pdf(self, update, context, data):
-        pdf_path = data["pdf_path"]
-        reader = PdfReader(pdf_path)
+        reader = PdfReader(data["pdf_path"])
         writer = PdfWriter()
-        writer.clone_document_from_reader(reader)
+        for page in reader.pages:
+            writer.add_page(page)
 
         fields = {
             "FIRST NAME": data["first_name"],
@@ -134,37 +134,23 @@ class PDFEditorBot:
             "Report Number": data["report_number"]
         }
 
-        writer.update_page_form_field_values(writer.pages[0], fields)
-
-        filled_path = f"/mnt/data/tempfilled-{data['report_number']}.pdf"
-        with open(filled_path, "wb") as f:
+        # Save directly to final file
+        os.makedirs("/mnt/data", exist_ok=True)
+        final_path = f"/mnt/data/report-{data['report_number']}.pdf"
+        with open(final_path, "wb") as f:
+            writer.update_page_form_field_values(writer.pages[0], fields)
             writer.write(f)
 
-        # Overlay title and footer
-        overlay_path = f"/mnt/data/overlay-{data['report_number']}.pdf"
-        c = canvas.Canvas(overlay_path, pagesize=letter)
+        # Add header/footer
+        c = canvas.Canvas(final_path, pagesize=letter)
         width, height = letter
-
         c.setFont("Helvetica", 8)
         c.drawString(40, 21.5, f"Report Created On {data['report_dt'].strftime('%Y-%m-%d %I:%M %p')}")
-
         c.setFont("Helvetica-Bold", 10)
-        title = data["report_number"]
-        title_width = c.stringWidth(title, "Helvetica-Bold", 10)
-        c.drawString((width - title_width) / 2, height - 129, title)
+        title_text = data['report_number']
+        title_width = c.stringWidth(title_text, "Helvetica-Bold", 10)
+        c.drawString((width - title_width) / 2, height - 129, title_text)
         c.save()
-
-        # Merge overlay onto filled base
-        final_path = f"/mnt/data/report-{data['report_number']}.pdf"
-        overlay = PdfReader(overlay_path)
-        writer_final = PdfWriter()
-        base_page = PdfReader(filled_path).pages[0]
-        overlay_page = overlay.pages[0]
-        base_page.merge_page(overlay_page)
-        writer_final.add_page(base_page)
-
-        with open(final_path, "wb") as f:
-            writer_final.write(f)
 
         await update.message.reply_document(document=open(final_path, "rb"), filename=f"report-{data['report_number']}.pdf")
 
