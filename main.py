@@ -1,4 +1,3 @@
-
 import os
 import random
 import re
@@ -9,6 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
+from PyPDF2.pdf import PageObject
 
 USER_STATE = {}
 
@@ -118,10 +118,10 @@ class PDFEditorBot:
                 await update.message.reply_text("invalid format. use: 2025-05-23 02:15 PM")
 
     async def fill_pdf(self, update, context, data):
-        reader = PdfReader(data["pdf_path"])
+        pdf_path = data["pdf_path"]
+        reader = PdfReader(pdf_path)
         writer = PdfWriter()
-        for page in reader.pages:
-            writer.add_page(page)
+        writer.clone_document_from_reader(reader)
 
         fields = {
             "FIRST NAME": data["first_name"],
@@ -137,25 +137,35 @@ class PDFEditorBot:
 
         writer.update_page_form_field_values(writer.pages[0], fields)
 
-        os.makedirs("/mnt/data", exist_ok=True)
         filled_path = f"/mnt/data/tempfilled-{data['report_number']}.pdf"
         with open(filled_path, "wb") as f:
             writer.write(f)
 
-        # Now draw only the footer + centered report number
-        final_path = f"/mnt/data/report-{data['report_number']}.pdf"
-        c = canvas.Canvas(final_path, pagesize=letter)
+        # Overlay title and footer
+        overlay_path = f"/mnt/data/overlay-{data['report_number']}.pdf"
+        c = canvas.Canvas(overlay_path, pagesize=letter)
         width, height = letter
 
         c.setFont("Helvetica", 8)
         c.drawString(40, 21.5, f"Report Created On {data['report_dt'].strftime('%Y-%m-%d %I:%M %p')}")
 
         c.setFont("Helvetica-Bold", 10)
-        title_text = data['report_number']
-        title_width = c.stringWidth(title_text, "Helvetica-Bold", 10)
-        c.drawString((width - title_width) / 2, height - 128.5, title_text)  # Fine-tuned Y
-
+        title = data["report_number"]
+        title_width = c.stringWidth(title, "Helvetica-Bold", 10)
+        c.drawString((width - title_width) / 2, height - 129, title)
         c.save()
+
+        # Merge overlay onto filled base
+        final_path = f"/mnt/data/report-{data['report_number']}.pdf"
+        overlay = PdfReader(overlay_path)
+        writer_final = PdfWriter()
+        base_page = PdfReader(filled_path).pages[0]
+        overlay_page = overlay.pages[0]
+        base_page.merge_page(overlay_page)
+        writer_final.add_page(base_page)
+
+        with open(final_path, "wb") as f:
+            writer_final.write(f)
 
         await update.message.reply_document(document=open(final_path, "rb"), filename=f"report-{data['report_number']}.pdf")
 
