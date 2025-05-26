@@ -1,4 +1,3 @@
-
 import os
 import random
 import re
@@ -9,10 +8,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 from adobe.pdfservices.operation.auth.credentials import Credentials
 from adobe.pdfservices.operation.execution_context import ExecutionContext
 from adobe.pdfservices.operation.io.file_ref import FileRef
-from adobe.pdfservices.operation.pdfops.options.document_merge.document_merge_options import DocumentMergeOptions
+from adobe.pdfservices.operation.pdfops.options.pdf_properties.pdf_properties_options import PDFPropertiesOptions
 from adobe.pdfservices.operation.pdfops.document_merge_operation import DocumentMergeOperation
-from adobe.pdfservices.operation.pdfops.options.document_merge.merge_field import MergeField
-from adobe.pdfservices.operation.exception.exceptions import ServiceApiException, ServiceUsageException, SdkException
+from adobe.pdfservices.operation.pdfops.options.document_merge.document_merge_options import DocumentMergeOptions
 
 USER_STATE = {}
 
@@ -38,7 +36,7 @@ class PDFEditorBot:
 
     def clean_datetime_string(self, text):
         cleaned = text.strip()
-        cleaned = re.sub(r"[​‌ ﻿ ]", "", cleaned)
+        cleaned = re.sub(r"[\u200b\u200c\u202f\ufeff\xa0]", "", cleaned)
         cleaned = re.sub(r"[“”]", '"', cleaned)
         cleaned = re.sub(r"[‘’]", "'", cleaned)
         cleaned = re.sub(r"\s+", " ", cleaned)
@@ -46,7 +44,7 @@ class PDFEditorBot:
 
     def try_parse_datetime(self, text):
         formats = [
-            "%Y-%m-%d %I:%M %p", "%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M%p", "%Y-%m-%d %H:%M%p"
+            "%Y-%m-%d %I:%M %p", "%Y-%m-%d %H:%M %p", "%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M%p", "%Y-%m-%d %H:%M%p"
         ]
         for fmt in formats:
             try:
@@ -115,7 +113,6 @@ class PDFEditorBot:
             credentials = Credentials.service_account_credentials_builder()                 .from_file("pdfservices-api-credentials.json")                 .build()
 
             execution_context = ExecutionContext.create(credentials)
-
             input_pdf = FileRef.create_from_local_file(data["pdf_path"])
 
             json_data = {
