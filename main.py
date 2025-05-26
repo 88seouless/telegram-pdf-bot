@@ -1,13 +1,18 @@
+
 import os
 import random
 import re
 import tempfile
 from datetime import datetime, timedelta
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
-from PyPDF2 import PdfReader, PdfWriter
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from adobe.pdfservices.operation.auth.credentials import Credentials
+from adobe.pdfservices.operation.execution_context import ExecutionContext
+from adobe.pdfservices.operation.io.file_ref import FileRef
+from adobe.pdfservices.operation.pdfops.options.document_merge.document_merge_options import DocumentMergeOptions
+from adobe.pdfservices.operation.pdfops.document_merge_operation import DocumentMergeOperation
+from adobe.pdfservices.operation.pdfops.options.document_merge.merge_field import MergeField
+from adobe.pdfservices.operation.exception.exceptions import ServiceApiException, ServiceUsageException, SdkException
 
 USER_STATE = {}
 
@@ -16,24 +21,11 @@ class PDFEditorBot:
         self.token = token
         self.app = Application.builder().token(token).build()
         self.app.add_handler(CommandHandler("start", self.start))
-        self.app.add_handler(CommandHandler("help", self.help))
-        self.app.add_handler(CommandHandler("cancel", self.cancel))
         self.app.add_handler(MessageHandler(filters.Document.PDF, self.handle_pdf))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
-        self.app.add_handler(CallbackQueryHandler(self.handle_callback))
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("welcome !")
-
-    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("upload a PDF and I’ll guide you through editing it.")
-
-    async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        USER_STATE.pop(update.effective_user.id, None)
-        await update.message.reply_text("cancelled.")
-
-    async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.callback_query.answer()
 
     def generate_report_number(self):
         return f"C{datetime.now().year}-0{random.randint(1000000, 9999999)}"
@@ -46,7 +38,7 @@ class PDFEditorBot:
 
     def clean_datetime_string(self, text):
         cleaned = text.strip()
-        cleaned = re.sub(r"[\u200b\u200c\u202f\ufeff\xa0]", "", cleaned)
+        cleaned = re.sub(r"[​‌ ﻿ ]", "", cleaned)
         cleaned = re.sub(r"[“”]", '"', cleaned)
         cleaned = re.sub(r"[‘’]", "'", cleaned)
         cleaned = re.sub(r"\s+", " ", cleaned)
@@ -54,8 +46,7 @@ class PDFEditorBot:
 
     def try_parse_datetime(self, text):
         formats = [
-            "%Y-%m-%d %I:%M %p", "%Y-%m-%d %H:%M %p", "%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M%p", "%Y-%m-%d %H:%M%p",
-            "%Y-%m-%d %I:%M", "%Y-%m-%d %I:%M%p", "%Y-%m-%d %H:%M%p"
+            "%Y-%m-%d %I:%M %p", "%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M%p", "%Y-%m-%d %H:%M%p"
         ]
         for fmt in formats:
             try:
@@ -68,7 +59,10 @@ class PDFEditorBot:
         file = await context.bot.get_file(update.message.document.file_id)
         tf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         await file.download_to_drive(tf.name)
-        USER_STATE[update.effective_user.id] = {"step": "awaiting_first", "pdf_path": tf.name}
+        USER_STATE[update.effective_user.id] = {
+            "step": "awaiting_first",
+            "pdf_path": tf.name
+        }
         await update.message.reply_text("first name:")
 
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,7 +94,7 @@ class PDFEditorBot:
         elif step == "awaiting_address":
             state["address"] = msg
             state["step"] = "awaiting_delivery"
-            await update.message.reply_text("delivery date and time:")
+            await update.message.reply_text("delivery date and time (e.g. 2025-05-24 02:15 PM):")
         elif step == "awaiting_delivery":
             cleaned = self.clean_datetime_string(msg)
             delivery = self.try_parse_datetime(cleaned)
@@ -117,60 +111,38 @@ class PDFEditorBot:
                 await update.message.reply_text("invalid format. use: 2025-05-23 02:15 PM")
 
     async def fill_pdf(self, update, context, data):
-        reader = PdfReader(data["pdf_path"])
-        writer = PdfWriter()
-        for page in reader.pages:
-            writer.add_page(page)
+        try:
+            credentials = Credentials.service_account_credentials_builder()                 .from_file("pdfservices-api-credentials.json")                 .build()
 
-        fields = {
-            "FIRST NAME": data["first_name"],
-            "LAST NAME": data["last_name"],
-            "EMAIL": data["email"],
-            "TRACKING NUMBER": data["tracking"],
-            "ORDERTOTAL": data["order_total"],
-            "ADDRESS": data["address"],
-            "DATE TIME REPORTED": data["report_dt"].strftime("%Y-%m-%d %I:%M %p"),
-            "DATETIME STARTED": data["delivery_dt"].strftime("%Y-%m-%d %I:%M %p")
-        }
+            execution_context = ExecutionContext.create(credentials)
 
-        writer.update_page_form_field_values(writer.pages[0], fields)
+            input_pdf = FileRef.create_from_local_file(data["pdf_path"])
 
-        os.makedirs("/mnt/data", exist_ok=True)
-        filled_path = f"/mnt/data/tempfilled-{data['report_number']}.pdf"
-        with open(filled_path, "wb") as f:
-            writer.write(f)
+            json_data = {
+                "FIRST NAME": data["first_name"],
+                "LAST NAME": data["last_name"],
+                "EMAIL": data["email"],
+                "TRACKING NUMBER": data["tracking"],
+                "ORDERTOTAL": data["order_total"],
+                "ADDRESS": data["address"],
+                "DATE TIME REPORTED": data["report_dt"].strftime("%Y-%m-%d %I:%M %p"),
+                "DATETIME STARTED": data["delivery_dt"].strftime("%Y-%m-%d %I:%M %p"),
+                "Report Number": data["report_number"]
+            }
 
-        # Draw title and footer only
-        final_path = f"/mnt/data/report-{data['report_number']}.pdf"
-        c = canvas.Canvas(final_path, pagesize=letter)
-        width, height = letter
+            options = DocumentMergeOptions(json_data, output_format="pdf")
+            operation = DocumentMergeOperation.create_new()
+            operation.set_input(input_pdf)
+            operation.set_options(options)
 
-        # Title
-        c.setFont("Helvetica-Bold", 10)
-        title_text = data['report_number']
-        title_width = c.stringWidth(title_text, "Helvetica-Bold", 10)
-        c.drawString((width - title_width) / 2, height - 129, title_text)
+            result = operation.execute(execution_context)
+            output_path = f"/mnt/data/report-{data['report_number']}.pdf"
+            result.save_as(output_path)
 
-        # Footer
-        c.setFont("Helvetica", 8)
-        c.drawString(40, 21.5, f"Report Created On {data['report_dt'].strftime('%Y-%m-%d %I:%M %p')}")
-        c.save()
+            await update.message.reply_document(document=open(output_path, "rb"), filename=f"report-{data['report_number']}.pdf")
 
-        # Merge the canvas footer + title onto filled PDF
-        final_reader = PdfReader(final_path)
-        filled_reader = PdfReader(filled_path)
-        output = PdfWriter()
-
-        base = filled_reader.pages[0]
-        overlay = final_reader.pages[0]
-        base.merge_page(overlay)
-        output.add_page(base)
-
-        output_path = f"/mnt/data/report-{data['report_number']}.pdf"
-        with open(output_path, "wb") as f:
-            output.write(f)
-
-        await update.message.reply_document(document=open(output_path, "rb"), filename=f"report-{data['report_number']}.pdf")
+        except Exception as e:
+            await update.message.reply_text(f"Adobe PDF generation failed: {str(e)}")
 
     def run(self):
         self.app.run_polling()
