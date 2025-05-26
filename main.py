@@ -110,7 +110,7 @@ class PDFEditorBot:
 
     async def fill_pdf(self, update, context, data):
         try:
-            credentials = Credentials.service_account_credentials_builder()                 .from_file("pdfservices-api-credentials.json")                 .build()
+            credentials = Credentials.service_account_credentials_builder()                 .from_string(os.getenv("PDF_SERVICES_CREDENTIALS_JSON"))                 .build()
 
             execution_context = ExecutionContext.create(credentials)
             input_pdf = FileRef.create_from_local_file(data["pdf_path"])
