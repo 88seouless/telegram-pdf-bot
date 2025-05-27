@@ -5,11 +5,11 @@ import tempfile
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-from pdfservices_sdk.operation.auth.credentials import Credentials
-from pdfservices_sdk.operation.execution_context import ExecutionContext
-from pdfservices_sdk.operation.io.file_ref import FileRef
-from pdfservices_sdk.operation.pdfops.options.document_merge.document_merge_options import DocumentMergeOptions
-from pdfservices_sdk.operation.pdfops.document_merge_operation import DocumentMergeOperation
+from adobe.pdfservices.operation.auth.credentials import Credentials
+from adobe.pdfservices.operation.execution_context import ExecutionContext
+from adobe.pdfservices.operation.io.file_ref import FileRef
+from adobe.pdfservices.operation.pdfops.document_merge_operation import DocumentMergeOperation
+from adobe.pdfservices.operation.pdfops.options.document_merge.document_merge_options import DocumentMergeOptions
 
 USER_STATE = {}
 
