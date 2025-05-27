@@ -1,3 +1,2 @@
 python-telegram-bot==20.0
 PyPDF2
-git+https://github.com/adobe/pdfservices-python-sdk.git#egg=adobe.pdfservices
