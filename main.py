@@ -1,4 +1,3 @@
-
 import os
 import random
 import re
@@ -9,8 +8,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 from pdfservices_sdk.operation.auth.credentials import Credentials
 from pdfservices_sdk.operation.execution_context import ExecutionContext
 from pdfservices_sdk.operation.io.file_ref import FileRef
-from pdfservices_sdk.operation.pdfops.document_merge_operation import DocumentMergeOperation
 from pdfservices_sdk.operation.pdfops.options.document_merge.document_merge_options import DocumentMergeOptions
+from pdfservices_sdk.operation.pdfops.document_merge_operation import DocumentMergeOperation
 
 USER_STATE = {}
 
@@ -110,7 +109,9 @@ class PDFEditorBot:
 
     async def fill_pdf(self, update, context, data):
         try:
-            credentials = Credentials.service_account_credentials_builder()                 .from_file("pdfservices-api-credentials.json")                 .build()
+            credentials = Credentials.service_account_credentials_builder() \
+                .from_file("pdfservices-api-credentials.json") \
+                .build()
 
             execution_context = ExecutionContext.create(credentials)
             input_pdf = FileRef.create_from_local_file(data["pdf_path"])
