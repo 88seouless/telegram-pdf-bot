@@ -1,3 +1,4 @@
+
 import os
 import random
 import re
@@ -5,12 +6,12 @@ import tempfile
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-from adobe.pdfservices.operation.auth.credentials import Credentials
-from adobe.pdfservices.operation.execution_context import ExecutionContext
-from adobe.pdfservices.operation.io.file_ref import FileRef
-from adobe.pdfservices.operation.pdfops.options.pdf_properties.pdf_properties_options import PDFPropertiesOptions
-from adobe.pdfservices.operation.pdfops.document_merge_operation import DocumentMergeOperation
-from adobe.pdfservices.operation.pdfops.options.document_merge.document_merge_options import DocumentMergeOptions
+from pdfservices_sdk.pdf_services.operation.auth.credentials import Credentials
+from pdfservices_sdk.pdf_services.operation.execution_context import ExecutionContext
+from pdfservices_sdk.pdf_services.operation.io.file_ref import FileRef
+from pdfservices_sdk.pdf_services.operation.pdfops.options.pdf_properties.pdf_properties_options import PDFPropertiesOptions
+from pdfservices_sdk.pdf_services.operation.pdfops.document_merge_operation import DocumentMergeOperation
+from pdfservices_sdk.pdf_services.operation.pdfops.options.document_merge.document_merge_options import DocumentMergeOptions
 
 USER_STATE = {}
 
@@ -36,7 +37,7 @@ class PDFEditorBot:
 
     def clean_datetime_string(self, text):
         cleaned = text.strip()
-        cleaned = re.sub(r"[\u200b\u200c\u202f\ufeff\xa0]", "", cleaned)
+        cleaned = re.sub(r"[​‌ ﻿ ]", "", cleaned)
         cleaned = re.sub(r"[“”]", '"', cleaned)
         cleaned = re.sub(r"[‘’]", "'", cleaned)
         cleaned = re.sub(r"\s+", " ", cleaned)
@@ -110,7 +111,7 @@ class PDFEditorBot:
 
     async def fill_pdf(self, update, context, data):
         try:
-            credentials = Credentials.service_account_credentials_builder()                 .from_string(os.getenv("PDF_SERVICES_CREDENTIALS_JSON"))                 .build()
+            credentials = Credentials.service_account_credentials_builder()                 .from_file("pdfservices-api-credentials.json")                 .build()
 
             execution_context = ExecutionContext.create(credentials)
             input_pdf = FileRef.create_from_local_file(data["pdf_path"])
